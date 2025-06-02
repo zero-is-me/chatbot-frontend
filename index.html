@@ -298,11 +298,20 @@
         audioPlayback.play();
 
         audioPlayback.onended = () => {
-          if (!vadRunning && mediaStream) {
-            vadRunning = true;
-            statusDiv.textContent = 'Listening for voice... Speak now.';
-          }
-        };
+        if (!vadRunning && mediaStream && audioContext) {
+          const source = audioContext.createMediaStreamSource(mediaStream);
+      
+          vadProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+          vadProcessor.onaudioprocess = vadAudioProcess;
+      
+          source.connect(vadProcessor);
+          vadProcessor.connect(audioContext.destination);
+      
+          vadRunning = true;
+          statusDiv.textContent = 'Listening for voice... Speak now.';
+        }
+      };
+
       } catch (error) {
         statusDiv.textContent = 'Error: ' + error.message;
         vadRunning = true;
