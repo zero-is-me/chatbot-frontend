@@ -201,21 +201,25 @@
   }
 
   function startRecording() {
-    isRecording = true;
-    recorder && recorder.record();
+  if (!recorder) {
+    // recreate recorder instance fresh each time you start recording
+    recorder = new Recorder(inputNode, { numChannels: 1 });
   }
+  isRecording = true;
+  recorder.record();
+}
 
-  function stopRecording() {
-    if (!isRecording) return;
-    isRecording = false;
+function stopRecording() {
+  if (!isRecording) return;
+  isRecording = false;
 
-    recorder && recorder.stop();
-    recorder && recorder.exportWAV(blob => {
-      recorder.clear();
-      handleRecordingStop(blob);
-    });
-  }
-
+  recorder.stop();
+  recorder.exportWAV(blob => {
+    recorder.clear();
+    recorder = null; // clear recorder instance so next start creates fresh one
+    handleRecordingStop(blob);
+  });
+}
   async function handleRecordingStop(wavBlob) {
     vadRunning = false;
     statusDiv.textContent = 'Processing audio...';
