@@ -128,45 +128,33 @@
     stopBtn.onclick = stopVoiceChat;
 
     async function startVoiceChat() {
-  startBtn.disabled = true;
-  stopBtn.disabled = false;
-  statusDiv.textContent = 'Initializing microphone...';
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      statusDiv.textContent = 'Initializing microphone...';
 
-  try {
-    audioContext = new AudioContext();
+      try {
+          audioContext = new AudioContext();
+          mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const source = audioContext.createMediaStreamSource(mediaStream);
 
-    mediaStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        sampleRate: 48000,
-        sampleSize: 16,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
+          vadProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+          vadProcessor.onaudioprocess = vadAudioProcess;
+
+          source.connect(vadProcessor);
+          vadProcessor.connect(audioContext.destination);
+
+          vadRunning = false;
+          setTimeout(() => {
+            vadRunning = true;
+            statusDiv.textContent = 'Listening for voice... Speak now.';
+          }, 1000);
+      } catch (error) {
+          console.error("Error starting voice chat:", error);
+          statusDiv.textContent = `Error: ${error.message}. Please ensure microphone access is enabled.`;
+          startBtn.disabled = false;
+          stopBtn.disabled = true;
       }
-    });
-
-    const source = audioContext.createMediaStreamSource(mediaStream);
-
-    vadProcessor = audioContext.createScriptProcessor(4096, 1, 1);
-    vadProcessor.onaudioprocess = vadAudioProcess;
-
-    source.connect(vadProcessor);
-    vadProcessor.connect(audioContext.destination);
-
-    vadRunning = false;
-    setTimeout(() => {
-      vadRunning = true;
-      statusDiv.textContent = 'Listening for voice... Speak now.';
-    }, 1000);
-
-  } catch (error) {
-    console.error("Error starting voice chat:", error);
-    statusDiv.textContent = `Error: ${error.message}. Please ensure microphone access is enabled.`;
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
-  }
-}
+    }
 
     function stopVoiceChat() {
       startBtn.disabled = false;
@@ -239,33 +227,16 @@
     }
 
     function startRecording() {
-  audioChunks = [];
+      audioChunks = [];
+      mediaRecorder = new MediaRecorder(mediaStream);
+      mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) audioChunks.push(e.data);
+      };
+      mediaRecorder.onstop = handleRecordingStop;
+      mediaRecorder.start();
+      isRecording = true;
+    }
 
-  const options = {
-    mimeType: 'audio/webm; codecs=opus',
-    bitsPerSecond: 128000,
-  };
-
-  try {
-    mediaRecorder = new MediaRecorder(mediaStream, options);
-  } catch (e) {
-    console.warn('MediaRecorder initialization failed with options, falling back:', e);
-    mediaRecorder = new MediaRecorder(mediaStream);
-  }
-
-  mediaRecorder.ondataavailable = e => {
-    if (e.data.size > 0) audioChunks.push(e.data);
-  };
-  mediaRecorder.onerror = e => {
-    console.error('MediaRecorder error:', e);
-    statusDiv.textContent = 'Recording error occurred.';
-  };
-  mediaRecorder.onstop = handleRecordingStop;
-  mediaRecorder.start();
-
-  isRecording = true;
-  console.log('Recording started');
-}
     function stopRecording() {
       if (mediaRecorder && mediaRecorder.state === 'recording') {
         mediaRecorder.stop();
