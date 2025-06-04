@@ -205,6 +205,54 @@
         padding: 30px 20px;
       }
       
+      startCalibration() {
+        this.isCalibrating = true;
+        this.calibrationSamples = [];
+        
+        const calibrationLoop = () => {
+          if (!this.isListening || !this.isCalibrating) return;
+          
+          // Get frequency data
+          this.analyser.getByteFrequencyData(this.dataArray);
+          
+          // Calculate RMS for baseline noise measurement
+          let sum = 0;
+          for (let i = 0; i < this.bufferLength; i++) {
+            sum += (this.dataArray[i] / 255) * (this.dataArray[i] / 255);
+          }
+          const rms = Math.sqrt(sum / this.bufferLength);
+          
+          this.calibrationSamples.push(rms);
+          
+          // Update visualization during calibration
+          this.updateVisualization(rms * 0.5); // Reduced intensity during calibration
+          
+          if (this.calibrationSamples.length < this.calibrationTime / 16) { // ~60fps
+            requestAnimationFrame(calibrationLoop);
+          } else {
+            this.finishCalibration();
+          }
+        };
+        
+        calibrationLoop();
+      }
+      
+      finishCalibration() {
+        // Calculate baseline noise level
+        this.baselineNoise = this.calibrationSamples.reduce((a, b) => a + b, 0) / this.calibrationSamples.length;
+        
+        // Set threshold based on baseline noise (3x baseline + minimum threshold)
+        this.vadThreshold = Math.max(this.baselineNoise * 3, 0.015);
+        
+        console.log(`🎚️ Calibration complete - Baseline: ${this.baselineNoise.toFixed(4)}, Threshold: ${this.vadThreshold.toFixed(4)}`);
+        
+        this.isCalibrating = false;
+        this.updateStatus('👂 Ready! Speak to start recording automatically');
+        
+        // Start the main VAD loop
+        this.vadLoop();
+      }
+      
       .controls {
         flex-direction: column;
       }
@@ -264,10 +312,16 @@
         this.silenceTimer = null;
         
         // VAD parameters - fine-tuned for better detection
-        this.vadThreshold = 0.008; // Lowered threshold for better sensitivity
-        this.silenceTimeout = 1500; // Reduced timeout for faster response
-        this.minRecordingTime = 500; // Minimum recording time in ms
+        this.vadThreshold = 0.02; // Increased threshold to reduce false positives
+        this.silenceTimeout = 2000; // Increased timeout for more stable detection
+        this.minRecordingTime = 800; // Increased minimum time
         this.recordingStartTime = 0;
+        
+        // Calibration phase
+        this.isCalibrating = true;
+        this.calibrationSamples = [];
+        this.calibrationTime = 3000; // 3 seconds of calibration
+        this.baselineNoise = 0;
         
         // Audio analysis
         this.dataArray = null;
@@ -346,10 +400,10 @@
           
           this.visualizer.style.display = 'block';
           this.isListening = true;
-          this.updateStatus('👂 Listening for voice... Speak to start recording!');
           
-          // Start the VAD loop
-          this.vadLoop();
+          // Start calibration phase
+          this.updateStatus('📊 Calibrating microphone... Please stay quiet for 3 seconds');
+          this.startCalibration();
           
         } catch (error) {
           console.error('Error starting listener:', error);
@@ -375,7 +429,7 @@
       }
       
       vadLoop() {
-        if (!this.isListening) return;
+        if (!this.isListening || this.isCalibrating) return;
         
         // Get frequency data
         this.analyser.getByteFrequencyData(this.dataArray);
@@ -395,10 +449,15 @@
         
         const avgVolume = this.volumeHistory.reduce((a, b) => a + b, 0) / this.volumeHistory.length;
         
+        // Debug logging (remove in production)
+        if (Math.random() < 0.01) { // Log 1% of the time to avoid spam
+          console.log(`Volume: ${avgVolume.toFixed(4)}, Threshold: ${this.vadThreshold.toFixed(4)}, Voice: ${avgVolume > this.vadThreshold}, Recording: ${this.isRecording}`);
+        }
+        
         // Update visualization
         this.updateVisualization(avgVolume);
         
-        // Voice Activity Detection
+        // Voice Activity Detection with improved logic
         const voiceDetected = avgVolume > this.vadThreshold;
         
         // Update VAD indicator
@@ -410,21 +469,24 @@
         
         // Handle recording state based on voice detection
         if (voiceDetected) {
+          // Voice detected - start recording if not already recording
           if (!this.isRecording) {
+            console.log('🎤 Voice detected, starting recording...');
             this.startRecording();
           }
-          // Clear silence timer since voice is detected
+          // Clear any existing silence timer since voice is active
           if (this.silenceTimer) {
+            console.log('🔄 Voice still active, clearing silence timer');
             clearTimeout(this.silenceTimer);
             this.silenceTimer = null;
           }
-        } else if (this.isRecording) {
-          // Start silence timer only if not already running
-          if (!this.silenceTimer) {
-            this.silenceTimer = setTimeout(() => {
-              this.stopRecording();
-            }, this.silenceTimeout);
-          }
+        } else if (this.isRecording && !this.silenceTimer) {
+          // No voice detected and we're recording - start silence countdown
+          console.log(`🤫 Silence detected, starting ${this.silenceTimeout}ms timer...`);
+          this.silenceTimer = setTimeout(() => {
+            console.log('⏱️ Silence timeout reached, stopping recording');
+            this.stopRecording();
+          }, this.silenceTimeout);
         }
         
         // Continue the loop
@@ -522,12 +584,12 @@
           const audio = new Audio(URL.createObjectURL(responseAudioBlob));
           
           audio.onended = () => {
-            this.updateStatus('👂 Listening for voice... Speak to start recording!');
+            this.updateStatus('👂 Ready! Speak to start recording automatically');
           };
           
           audio.onerror = (error) => {
             console.error('Audio playback error:', error);
-            this.updateStatus('👂 Listening for voice... Speak to start recording!');
+            this.updateStatus('👂 Ready! Speak to start recording automatically');
           };
           
           await audio.play();
@@ -536,7 +598,7 @@
           console.error('Processing error:', error);
           this.updateStatus(`❌ Error: ${error.message}`);
           setTimeout(() => {
-            this.updateStatus('👂 Listening for voice... Speak to start recording!');
+            this.updateStatus('👂 Ready! Speak to start recording automatically');
           }, 3000);
         }
         
