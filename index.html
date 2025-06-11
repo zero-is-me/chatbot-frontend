@@ -213,7 +213,7 @@
                 const response = await fetch(`${BACKEND_URL}/start`);
                 if (!response.ok) throw new Error("Failed to get greeting from backend.");
                 
-                addMessage("Hello! I'm your interviewer for today. To start, could you tell me a bit about your interests?", "bot-message");
+                addMessage("Hello! who's on call", "bot-message");
                 controlButton.textContent = 'Listening...';
                 await playAudioFromStream(response.body);
 
