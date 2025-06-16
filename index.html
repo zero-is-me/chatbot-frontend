@@ -187,21 +187,17 @@
 
         // --- CORE LOGIC ---
         function handleControlButtonClick() {
-            if (!recognition) {
-                navigator.mediaDevices.getUserMedia({ audio: true })
-                    .then(stream => {
-                        console.log("Microphone access granted.");
-                        const success = initializeSpeechRecognition();
-                        if (success) {
-                            startInterview();
-                        }
-                    })
-                    .catch(err => {
-                        updateStatus("Microphone permission denied. Please enable it.", "error");
-                        console.error("getUserMedia error:", err);
-                    });
-            }
-        }
+    navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+            console.log("Microphone access granted.");
+            if (!recognition) initializeSpeechRecognition();
+            startInterview(); // called only on user gesture (click)
+        })
+        .catch(err => {
+            updateStatus("Mic permission denied. Please enable it.", "error");
+            console.error("Mic access error:", err);
+        });
+}
         
         async function startInterview() {
             controlButton.disabled = true;
@@ -249,11 +245,14 @@
         }
 
         function startListening() {
-            if (!isBotSpeaking) {
-                finalTranscript = '';
-                recognition.start();
-            }
+    if (!isBotSpeaking && recognition) {
+        try {
+            recognition.start();
+        } catch (err) {
+            console.warn("Recognition already started or not allowed on mobile:", err);
         }
+    }
+}
 
         // --- UTILITY FUNCTIONS ---
         async function playAudioFromStream(stream) {
